@@ -1,0 +1,1814 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AetherRender 3D — Estúdio PBR de Última Geração</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <!-- Lucide Icons -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        :root {
+            --bg-dark: #090a0f;
+            --panel-bg: rgba(15, 17, 26, 0.78);
+            --panel-border: rgba(255, 255, 255, 0.08);
+            --accent: #38bdf8;
+            --accent-glow: rgba(56, 189, 248, 0.35);
+        }
+
+        * {
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            margin: 0;
+            padding: 0;
+            overflow: hidden;
+            background-color: var(--bg-dark);
+            font-family: 'Inter', sans-serif;
+            color: #e2e8f0;
+        }
+
+        #canvas-container {
+            position: fixed;
+            inset: 0;
+            width: 100vw;
+            height: 100vh;
+            z-index: 1;
+        }
+
+        /* Glassmorphism Panels */
+        .glass-panel {
+            background: var(--panel-bg);
+            backdrop-filter: blur(18px);
+            -webkit-backdrop-filter: blur(18px);
+            border: 1px solid var(--panel-border);
+            box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+        }
+
+        /* Custom Scrollbar */
+        ::-webkit-scrollbar {
+            width: 5px;
+            height: 5px;
+        }
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.2);
+        }
+        ::-webkit-scrollbar-thumb {
+            background: rgba(255, 255, 255, 0.15);
+            border-radius: 9999px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(56, 189, 248, 0.5);
+        }
+
+        /* Custom Range Sliders */
+        input[type="range"] {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 100%;
+            height: 4px;
+            background: rgba(255, 255, 255, 0.12);
+            border-radius: 999px;
+            outline: none;
+            cursor: pointer;
+        }
+
+        input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            appearance: none;
+            width: 14px;
+            height: 14px;
+            border-radius: 50%;
+            background: #38bdf8;
+            box-shadow: 0 0 10px var(--accent-glow);
+            cursor: pointer;
+            transition: transform 0.15s ease, background 0.15s ease;
+        }
+
+        input[type="range"]::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+            background: #7dd3fc;
+        }
+
+        input[type="color"] {
+            -webkit-appearance: none;
+            border: none;
+            width: 28px;
+            height: 22px;
+            border-radius: 6px;
+            background: transparent;
+            cursor: pointer;
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch-wrapper {
+            padding: 0;
+        }
+        input[type="color"]::-webkit-color-swatch {
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 6px;
+        }
+
+        .mono {
+            font-family: 'JetBrains Mono', monospace;
+        }
+
+        .tool-btn.active {
+            background: rgba(56, 189, 248, 0.2);
+            border-color: rgba(56, 189, 248, 0.6);
+            color: #38bdf8;
+            box-shadow: 0 0 15px rgba(56, 189, 248, 0.15);
+        }
+
+        /* Drag overlay */
+        #drop-zone-overlay {
+            pointer-events: none;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        #drop-zone-overlay.active {
+            opacity: 1;
+        }
+
+        /* Mobile Drawer Transitions */
+        @media (max-width: 1024px) {
+            .sidebar-left {
+                transform: translateX(-110%);
+                transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            .sidebar-left.open {
+                transform: translateX(0);
+            }
+            .sidebar-right {
+                transform: translateX(110%);
+                transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+            }
+            .sidebar-right.open {
+                transform: translateX(0);
+            }
+        }
+    </style>
+
+    <!-- Import Map para Three.js r162 e Addons -->
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.162.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.162.0/examples/jsm/"
+            }
+        }
+    </script>
+</head>
+<body>
+
+    <!-- Viewport 3D Principal -->
+    <div id="canvas-container"></div>
+
+    <!-- Overlay de Arrastar e Soltar Arquivos -->
+    <div id="drop-zone-overlay" class="fixed inset-0 z-50 flex items-center justify-center bg-sky-950/70 backdrop-blur-md border-2 border-dashed border-sky-400 m-4 rounded-2xl">
+        <div class="text-center p-8">
+            <i data-lucide="upload-cloud" class="w-16 h-16 text-sky-400 mx-auto mb-4 animate-bounce"></i>
+            <h2 class="text-2xl font-bold text-white mb-2">Solte seu Modelo 3D Aqui</h2>
+            <p class="text-sky-200 text-sm">Suporta arquivos <span class="mono bg-sky-900/80 px-2 py-0.5 rounded">.GLB</span>, <span class="mono bg-sky-900/80 px-2 py-0.5 rounded">.GLTF</span>, <span class="mono bg-sky-900/80 px-2 py-0.5 rounded">.OBJ</span> e <span class="mono bg-sky-900/80 px-2 py-0.5 rounded">.STL</span></p>
+        </div>
+    </div>
+
+    <!-- Notificação Toast Customizada -->
+    <div id="toast-container" class="fixed top-20 left-1/2 -translate-x-1/2 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Barra Superior (Header & Ferramentas de Transformação) -->
+    <header class="fixed top-3 left-3 right-3 z-30 flex items-center justify-between gap-2 pointer-events-none">
+        <!-- Marca & Botão Mobile Esquerdo -->
+        <div class="glass-panel rounded-xl px-3.5 py-2 flex items-center gap-3 pointer-events-auto">
+            <button id="toggle-left-panel" class="lg:hidden p-1.5 rounded-lg hover:bg-white/10 text-slate-300" title="Cena e Objetos">
+                <i data-lucide="layers" class="w-5 h-5"></i>
+            </button>
+            <div class="flex items-center gap-2.5">
+                <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-sky-400 to-indigo-600 flex items-center justify-center shadow-lg shadow-sky-500/25">
+                    <i data-lucide="box" class="w-4 h-4 text-white"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-1.5">
+                        <span class="font-bold text-sm tracking-tight text-white">AetherRender</span>
+                        <span class="text-[10px] font-semibold uppercase tracking-wider px-1.5 py-0.2 rounded bg-sky-500/20 text-sky-300 border border-sky-500/30">PBR 3D</span>
+                    </div>
+                    <p class="text-[10px] text-slate-400 hidden sm:block">WebGL2 • ACES Filmic • HDRI Studio</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- Barra Central: Gizmo Transform & Viewport Toggles -->
+        <div class="glass-panel rounded-xl p-1.5 flex items-center gap-1 pointer-events-auto overflow-x-auto max-w-full">
+            <!-- Transform Controls -->
+            <button id="btn-mode-translate" class="tool-btn active px-2.5 py-1.5 rounded-lg border border-transparent text-xs font-medium flex items-center gap-1.5 text-slate-300 hover:bg-white/5 transition" title="Mover Objeto (Atalho: W)">
+                <i data-lucide="move" class="w-3.5 h-3.5"></i>
+                <span class="hidden md:inline">Mover</span>
+                <span class="mono text-[10px] opacity-60 hidden xl:inline">[W]</span>
+            </button>
+            <button id="btn-mode-rotate" class="tool-btn px-2.5 py-1.5 rounded-lg border border-transparent text-xs font-medium flex items-center gap-1.5 text-slate-300 hover:bg-white/5 transition" title="Rotacionar Objeto (Atalho: E)">
+                <i data-lucide="rotate-3d" class="w-3.5 h-3.5"></i>
+                <span class="hidden md:inline">Rotacionar</span>
+                <span class="mono text-[10px] opacity-60 hidden xl:inline">[E]</span>
+            </button>
+            <button id="btn-mode-scale" class="tool-btn px-2.5 py-1.5 rounded-lg border border-transparent text-xs font-medium flex items-center gap-1.5 text-slate-300 hover:bg-white/5 transition" title="Escalar Objeto (Atalho: R)">
+                <i data-lucide="maximize-2" class="w-3.5 h-3.5"></i>
+                <span class="hidden md:inline">Escalar</span>
+                <span class="mono text-[10px] opacity-60 hidden xl:inline">[R]</span>
+            </button>
+
+            <div class="w-px h-5 bg-white/10 mx-1"></div>
+
+            <!-- Modos de Visualização -->
+            <button id="btn-toggle-wireframe" class="tool-btn px-2.5 py-1.5 rounded-lg border border-transparent text-xs font-medium flex items-center gap-1.5 text-slate-300 hover:bg-white/5 transition" title="Malha Wireframe">
+                <i data-lucide="grid" class="w-3.5 h-3.5"></i>
+                <span class="hidden lg:inline">Malha</span>
+            </button>
+            <button id="btn-toggle-autorotate" class="tool-btn active px-2.5 py-1.5 rounded-lg border border-transparent text-xs font-medium flex items-center gap-1.5 text-slate-300 hover:bg-white/5 transition" title="Rotação Automática (Turntable)">
+                <i data-lucide="refresh-cw" class="w-3.5 h-3.5"></i>
+                <span class="hidden lg:inline">Girar</span>
+            </button>
+            <button id="btn-focus-camera" class="tool-btn px-2.5 py-1.5 rounded-lg border border-transparent text-xs font-medium flex items-center gap-1.5 text-slate-300 hover:bg-white/5 transition" title="Centralizar Câmera (Atalho: F)">
+                <i data-lucide="crosshair" class="w-3.5 h-3.5"></i>
+                <span class="hidden lg:inline">Focar</span>
+            </button>
+        </div>
+
+        <!-- Ações Rápidas: Importar & Capturar PNG -->
+        <div class="glass-panel rounded-xl p-1.5 flex items-center gap-1.5 pointer-events-auto">
+            <label for="file-input" class="cursor-pointer px-3 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-xs font-medium text-slate-200 flex items-center gap-1.5 transition" title="Importar .GLB, .GLTF, .OBJ ou .STL">
+                <i data-lucide="folder-up" class="w-3.5 h-3.5 text-sky-400"></i>
+                <span class="hidden sm:inline">Importar 3D</span>
+            </label>
+            <input type="file" id="file-input" accept=".glb,.gltf,.obj,.stl" class="hidden">
+
+            <button id="btn-export-png" class="px-3 py-1.5 rounded-lg bg-sky-500 hover:bg-sky-400 text-slate-950 font-semibold text-xs flex items-center gap-1.5 shadow-lg shadow-sky-500/20 transition" title="Baixar Renderização em PNG">
+                <i data-lucide="camera" class="w-3.5 h-3.5"></i>
+                <span class="hidden sm:inline">Exportar PNG</span>
+            </button>
+
+            <button id="toggle-right-panel" class="lg:hidden p-1.5 rounded-lg hover:bg-white/10 text-slate-300" title="Materiais e Iluminação">
+                <i data-lucide="sliders" class="w-5 h-5"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- Painel Esquerdo: Primitivas, Cena (Outliner) & Iluminação/Ambiente -->
+    <aside id="left-sidebar" class="sidebar-left fixed top-16 bottom-12 left-3 w-72 z-20 flex flex-col gap-3 pointer-events-none">
+        <!-- Adicionar Primitivas -->
+        <div class="glass-panel rounded-2xl p-3.5 pointer-events-auto">
+            <div class="flex items-center justify-between mb-2.5">
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <i data-lucide="shapes" class="w-3.5 h-3.5 text-sky-400"></i>
+                    Adicionar Geometria
+                </h3>
+            </div>
+            <div class="grid grid-cols-3 gap-1.5">
+                <button data-primitive="sphere" class="add-prim-btn flex flex-col items-center justify-center p-2 rounded-xl bg-white/5 hover:bg-sky-500/20 hover:border-sky-500/40 border border-white/5 transition group">
+                    <i data-lucide="circle" class="w-4 h-4 text-slate-300 group-hover:text-sky-400 mb-1"></i>
+                    <span class="text-[10px] text-slate-300">Esfera PBR</span>
+                </button>
+                <button data-primitive="box" class="add-prim-btn flex flex-col items-center justify-center p-2 rounded-xl bg-white/5 hover:bg-sky-500/20 hover:border-sky-500/40 border border-white/5 transition group">
+                    <i data-lucide="box" class="w-4 h-4 text-slate-300 group-hover:text-sky-400 mb-1"></i>
+                    <span class="text-[10px] text-slate-300">Cubo Chanf.</span>
+                </button>
+                <button data-primitive="torusKnot" class="add-prim-btn flex flex-col items-center justify-center p-2 rounded-xl bg-white/5 hover:bg-sky-500/20 hover:border-sky-500/40 border border-white/5 transition group">
+                    <i data-lucide="infinity" class="w-4 h-4 text-slate-300 group-hover:text-sky-400 mb-1"></i>
+                    <span class="text-[10px] text-slate-300">Torus Knot</span>
+                </button>
+                <button data-primitive="cylinder" class="add-prim-btn flex flex-col items-center justify-center p-2 rounded-xl bg-white/5 hover:bg-sky-500/20 hover:border-sky-500/40 border border-white/5 transition group">
+                    <i data-lucide="cylinder" class="w-4 h-4 text-slate-300 group-hover:text-sky-400 mb-1"></i>
+                    <span class="text-[10px] text-slate-300">Cilindro</span>
+                </button>
+                <button data-primitive="gear" class="add-prim-btn flex flex-col items-center justify-center p-2 rounded-xl bg-white/5 hover:bg-sky-500/20 hover:border-sky-500/40 border border-white/5 transition group">
+                    <i data-lucide="settings" class="w-4 h-4 text-slate-300 group-hover:text-sky-400 mb-1"></i>
+                    <span class="text-[10px] text-slate-300">Engrenagem</span>
+                </button>
+                <button data-primitive="plane" class="add-prim-btn flex flex-col items-center justify-center p-2 rounded-xl bg-white/5 hover:bg-sky-500/20 hover:border-sky-500/40 border border-white/5 transition group">
+                    <i data-lucide="square" class="w-4 h-4 text-slate-300 group-hover:text-sky-400 mb-1"></i>
+                    <span class="text-[10px] text-slate-300">Plano</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Outliner da Cena -->
+        <div class="glass-panel rounded-2xl p-3.5 flex-1 flex flex-col min-h-0 pointer-events-auto">
+            <div class="flex items-center justify-between mb-2">
+                <h3 class="text-xs font-semibold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                    <i data-lucide="layers" class="w-3.5 h-3.5 text-sky-400"></i>
+                    Objetos na Cena
+                </h3>
+                <button id="btn-reset-scene" class="text-[10px] text-slate-400 hover:text-sky-400 transition" title="Restaurar Cena de Demonstração">
+                    Resetar Cena
+                </button>
+            </div>
+
+            <div id="scene-outliner" class="flex-1 overflow-y-auto space-y-1 pr-1">
+                <!-- Preenchido dinamicamente via JS -->
+            </div>
+
+            <!-- Ações do Objeto Selecionado -->
+            <div class="pt-2.5 mt-2 border-t border-white/10 flex items-center gap-1.5">
+                <button id="btn-duplicate-obj" class="flex-1 py-1.5 px-2 rounded-lg bg-white/5 hover:bg-white/10 text-xs font-medium text-slate-300 flex items-center justify-center gap-1.5 transition" title="Duplicar Selecionado">
+                    <i data-lucide="copy" class="w-3.5 h-3.5"></i>
+                    Duplicar
+                </button>
+                <button id="btn-delete-obj" class="flex-1 py-1.5 px-2 rounded-lg bg-rose-500/10 hover:bg-rose-500/25 border border-rose-500/20 text-xs font-medium text-rose-300 flex items-center justify-center gap-1.5 transition" title="Excluir Selecionado (Del)">
+                    <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
+                    Excluir
+                </button>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Painel Direito: Editor de Materiais PBR, Ambiente HDRI & Pós-Processamento -->
+    <aside id="right-sidebar" class="sidebar-right fixed top-16 bottom-12 right-3 w-80 z-20 flex flex-col gap-3 pointer-events-none">
+        <div class="glass-panel rounded-2xl flex-1 flex flex-col min-h-0 overflow-hidden pointer-events-auto">
+            <!-- Abas Superiores do Inspetor -->
+            <div class="grid grid-cols-2 border-b border-white/10 bg-black/20 p-1 gap-1">
+                <button id="tab-material" class="inspector-tab active py-1.5 rounded-lg text-xs font-semibold bg-sky-500/20 text-sky-300 border border-sky-500/30 flex items-center justify-center gap-1.5 transition">
+                    <i data-lucide="palette" class="w-3.5 h-3.5"></i>
+                    Material PBR
+                </button>
+                <button id="tab-studio" class="inspector-tab py-1.5 rounded-lg text-xs font-semibold text-slate-400 hover:text-slate-200 flex items-center justify-center gap-1.5 transition">
+                    <i data-lucide="sun" class="w-3.5 h-3.5"></i>
+                    Luz & Render
+                </button>
+            </div>
+
+            <!-- Conteúdo Aba 1: Editor de Material PBR -->
+            <div id="panel-material" class="flex-1 overflow-y-auto p-4 space-y-4">
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-slate-400">Selecionado:</span>
+                    <span id="selected-obj-label" class="text-xs font-semibold text-sky-300 truncate max-w-[160px]">Núcleo Mecânico</span>
+                </div>
+
+                <!-- Presets de Materiais PBR -->
+                <div>
+                    <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Presets Físicos (PBR)</label>
+                    <div class="grid grid-cols-2 gap-1.5">
+                        <button data-mat-preset="brushedSteel" class="mat-preset-btn text-left px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] flex items-center gap-2 transition">
+                            <span class="w-3 h-3 rounded-full bg-gradient-to-tr from-slate-500 to-slate-200 border border-white/30"></span>
+                            Aço Escovado
+                        </button>
+                        <button data-mat-preset="polishedGold" class="mat-preset-btn text-left px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] flex items-center gap-2 transition">
+                            <span class="w-3 h-3 rounded-full bg-gradient-to-tr from-amber-600 to-yellow-300 border border-white/30"></span>
+                            Ouro Polido
+                        </button>
+                        <button data-mat-preset="chrome" class="mat-preset-btn text-left px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] flex items-center gap-2 transition">
+                            <span class="w-3 h-3 rounded-full bg-gradient-to-tr from-zinc-400 to-white border border-white/30"></span>
+                            Cromo Espelho
+                        </button>
+                        <button data-mat-preset="anodizedBlue" class="mat-preset-btn text-left px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] flex items-center gap-2 transition">
+                            <span class="w-3 h-3 rounded-full bg-gradient-to-tr from-blue-700 to-sky-400 border border-white/30"></span>
+                            Alumínio Anod.
+                        </button>
+                        <button data-mat-preset="crystalGlass" class="mat-preset-btn text-left px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] flex items-center gap-2 transition">
+                            <span class="w-3 h-3 rounded-full bg-gradient-to-tr from-cyan-400/40 to-white/80 border border-white/40"></span>
+                            Vidro Cristal
+                        </button>
+                        <button data-mat-preset="mattePlastic" class="mat-preset-btn text-left px-2.5 py-1.5 rounded-lg bg-white/5 hover:bg-white/10 border border-white/10 text-[11px] flex items-center gap-2 transition">
+                            <span class="w-3 h-3 rounded-full bg-slate-700 border border-white/20"></span>
+                            Plástico Fosco
+                        </button>
+                        <button data-mat-preset="neonEmissive" class="mat-preset-btn col-span-2 text-left px-2.5 py-1.5 rounded-lg bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/30 text-[11px] text-sky-200 flex items-center gap-2 transition">
+                            <span class="w-3 h-3 rounded-full bg-sky-400 shadow-[0_0_8px_#38bdf8]"></span>
+                            Emissivo Neon (Núcleo Energético)
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Micro-Relevo Procedural (Normal/Bump Map) -->
+                <div class="pt-2 border-t border-white/10">
+                    <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Micro-Superfície (Normal Map)</label>
+                    <select id="mat-surface-texture" class="w-full bg-slate-900/90 border border-white/15 rounded-lg px-2.5 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-sky-400">
+                        <option value="smooth">Liso Polido (Sem Ruído)</option>
+                        <option value="brushed">Aço Escovado Anisotrópico</option>
+                        <option value="carbon">Fibra de Carbono TranÃ§ada</option>
+                    </select>
+                </div>
+
+                <!-- Propriedades Base -->
+                <div class="space-y-3 pt-2 border-t border-white/10">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs text-slate-300">Cor Base (Albedo)</label>
+                        <div class="flex items-center gap-2">
+                            <span id="val-base-color" class="mono text-[10px] text-slate-400">#CBD5E1</span>
+                            <input type="color" id="mat-color" value="#cbd5e1">
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Metalicidade (Metalness)</span>
+                            <span id="val-metalness" class="mono text-sky-400">0.90</span>
+                        </div>
+                        <input type="range" id="mat-metalness" min="0" max="1" step="0.01" value="0.90">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Rugosidade (Roughness)</span>
+                            <span id="val-roughness" class="mono text-sky-400">0.22</span>
+                        </div>
+                        <input type="range" id="mat-roughness" min="0" max="1" step="0.01" value="0.22">
+                    </div>
+                </div>
+
+                <!-- Camada de Verniz & Transmissão -->
+                <div class="space-y-3 pt-2 border-t border-white/10">
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Verniz (Clearcoat)</span>
+                            <span id="val-clearcoat" class="mono text-sky-400">0.30</span>
+                        </div>
+                        <input type="range" id="mat-clearcoat" min="0" max="1" step="0.01" value="0.30">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Rugosidade do Verniz</span>
+                            <span id="val-clearcoat-roughness" class="mono text-sky-400">0.10</span>
+                        </div>
+                        <input type="range" id="mat-clearcoat-roughness" min="0" max="1" step="0.01" value="0.10">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Transmissão Óptica (Vidro)</span>
+                            <span id="val-transmission" class="mono text-sky-400">0.00</span>
+                        </div>
+                        <input type="range" id="mat-transmission" min="0" max="1" step="0.01" value="0">
+                    </div>
+                </div>
+
+                <!-- Emissão -->
+                <div class="space-y-3 pt-2 border-t border-white/10">
+                    <div class="flex items-center justify-between">
+                        <label class="text-xs text-slate-300">Cor Emissiva</label>
+                        <div class="flex items-center gap-2">
+                            <span id="val-emissive-color" class="mono text-[10px] text-slate-400">#000000</span>
+                            <input type="color" id="mat-emissive" value="#000000">
+                        </div>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Intensidade Emissiva</span>
+                            <span id="val-emissive-intensity" class="mono text-sky-400">0.0</span>
+                        </div>
+                        <input type="range" id="mat-emissive-intensity" min="0" max="10" step="0.1" value="0">
+                    </div>
+                </div>
+            </div>
+
+            <!-- Conteúdo Aba 2: Iluminação HDRI, Sombras & Pós-Processamento -->
+            <div id="panel-studio" class="hidden flex-1 overflow-y-auto p-4 space-y-4">
+                <!-- Ambiente HDRI Procedural -->
+                <div>
+                    <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-1.5">Ambiente HDRI (Reflexos IBL)</label>
+                    <select id="env-preset" class="w-full bg-slate-900/90 border border-white/15 rounded-lg px-2.5 py-2 text-xs text-slate-200 focus:outline-none focus:border-sky-400">
+                        <option value="neutral">Estúdio Neutro (Softboxes)</option>
+                        <option value="sunset">Pôr do Sol Industrial</option>
+                        <option value="neon">Laboratório Neon Cyberpunk</option>
+                        <option value="metallic">Galpão Metálico Alto Contraste</option>
+                    </select>
+                </div>
+
+                <!-- Tone Mapping Exposure -->
+                <div class="space-y-3 pt-2 border-t border-white/10">
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Exposição ACES Filmic</span>
+                            <span id="val-exposure" class="mono text-sky-400">1.15</span>
+                        </div>
+                        <input type="range" id="render-exposure" min="0.2" max="2.5" step="0.05" value="1.15">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Intensidade do Ambiente</span>
+                            <span id="val-env-intensity" class="mono text-sky-400">1.00</span>
+                        </div>
+                        <input type="range" id="env-intensity" min="0" max="2.5" step="0.05" value="1.0">
+                    </div>
+                </div>
+
+                <!-- Luz Principal (Key Directional Light) -->
+                <div class="space-y-3 pt-2 border-t border-white/10">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Luz Principal (Key Light)</span>
+                        <input type="color" id="key-light-color" value="#ffffff">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Intensidade</span>
+                            <span id="val-key-intensity" class="mono text-sky-400">2.8</span>
+                        </div>
+                        <input type="range" id="key-light-intensity" min="0" max="8" step="0.1" value="2.8">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Azimute (Ângulo Horizontal)</span>
+                            <span id="val-key-azimuth" class="mono text-sky-400">45°</span>
+                        </div>
+                        <input type="range" id="key-light-azimuth" min="0" max="360" step="1" value="45">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Elevação (Altura)</span>
+                            <span id="val-key-elevation" class="mono text-sky-400">55°</span>
+                        </div>
+                        <input type="range" id="key-light-elevation" min="10" max="85" step="1" value="55">
+                    </div>
+                </div>
+
+                <!-- Pós-Processamento: Unreal Bloom -->
+                <div class="space-y-3 pt-2 border-t border-white/10">
+                    <div class="flex items-center justify-between">
+                        <span class="text-[11px] font-semibold uppercase tracking-wider text-slate-400">Pós-Processamento Bloom</span>
+                        <label class="relative inline-flex items-center cursor-pointer">
+                            <input type="checkbox" id="bloom-enabled" checked class="sr-only peer">
+                            <div class="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-sky-500"></div>
+                        </label>
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Força do Brilho (Strength)</span>
+                            <span id="val-bloom-strength" class="mono text-sky-400">0.45</span>
+                        </div>
+                        <input type="range" id="bloom-strength" min="0" max="2" step="0.05" value="0.45">
+                    </div>
+
+                    <div>
+                        <div class="flex justify-between text-xs mb-1">
+                            <span class="text-slate-300">Limiar (Threshold)</span>
+                            <span id="val-bloom-threshold" class="mono text-sky-400">0.85</span>
+                        </div>
+                        <input type="range" id="bloom-threshold" min="0" max="1.5" step="0.05" value="0.85">
+                    </div>
+                </div>
+
+                <!-- Piso do Estúdio -->
+                <div class="pt-2 border-t border-white/10 flex items-center justify-between">
+                    <span class="text-xs text-slate-300">Grade & Piso Reflexivo</span>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="floor-visible" checked class="sr-only peer">
+                        <div class="w-8 h-4 bg-slate-700 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-sky-500"></div>
+                    </label>
+                </div>
+            </div>
+        </div>
+    </aside>
+
+    <!-- Barra Inferior de Telemetria HUD -->
+    <footer class="fixed bottom-3 left-3 right-3 z-20 flex items-center justify-between pointer-events-none">
+        <div class="glass-panel rounded-xl px-3.5 py-1.5 flex items-center gap-4 text-[11px] mono pointer-events-auto overflow-x-auto max-w-full">
+            <div class="flex items-center gap-1.5">
+                <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                <span class="text-slate-400">FPS:</span>
+                <span id="hud-fps" class="text-emerald-400 font-semibold">60</span>
+            </div>
+            <div class="w-px h-3.5 bg-white/10"></div>
+            <div class="flex items-center gap-1.5">
+                <span class="text-slate-400">Draw Calls:</span>
+                <span id="hud-calls" class="text-slate-200">0</span>
+            </div>
+            <div class="w-px h-3.5 bg-white/10"></div>
+            <div class="flex items-center gap-1.5">
+                <span class="text-slate-400">Triângulos:</span>
+                <span id="hud-triangles" class="text-sky-300">0</span>
+            </div>
+            <div class="w-px h-3.5 bg-white/10 hidden md:block"></div>
+            <div class="hidden md:flex items-center gap-1.5 text-slate-400">
+                <span id="hud-gpu">WebGL 2.0 • PBR Pipeline</span>
+            </div>
+        </div>
+
+        <div class="glass-panel rounded-xl px-3 py-1.5 text-[11px] text-slate-400 hidden sm:flex items-center gap-2 pointer-events-auto">
+            <span>Clique p/ Selecionar</span>
+            <span>•</span>
+            <span>Arraste <span class="text-slate-200 font-medium">.GLB/.OBJ/.STL</span></span>
+        </div>
+    </footer>
+
+    <!-- Script Principal Three.js -->
+    <script type="module">
+        import * as THREE from 'three';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import { TransformControls } from 'three/addons/controls/TransformControls.js';
+        import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+        import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+        import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+        import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+        import { RoundedBoxGeometry } from 'three/addons/geometries/RoundedBoxGeometry.js';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OBJLoader } from 'three/addons/loaders/OBJLoader.js';
+        import { STLLoader } from 'three/addons/loaders/STLLoader.js';
+
+        // Inicializa ícones Lucide
+        lucide.createIcons();
+
+        // =========================================================================
+        // 1. ESTADO GLOBAL & CONFIGURAÇÕES DO ESTÚDIO
+        // =========================================================================
+        const state = {
+            sceneObjects: [],       // Lista de objetos gerenciados no Outliner
+            selectedObject: null,   // Objeto atualmente selecionado
+            selectedMesh: null,     // Malha ativa para edição de material
+            autoRotate: true,
+            wireframe: false,
+            bloomEnabled: true,
+            envIntensity: 1.0,
+            keyAzimuth: 45,
+            keyElevation: 55
+        };
+
+        // =========================================================================
+        // 2. INICIALIZAÇÃO DO RENDERER, CENA E CÂMERA
+        // =========================================================================
+        const container = document.getElementById('canvas-container');
+        const renderer = new THREE.WebGLRenderer({
+            antialias: true,
+            powerPreference: 'high-performance',
+            preserveDrawingBuffer: true // Necessário para exportar PNG limpo
+        });
+        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        renderer.toneMapping = THREE.ACESFilmicToneMapping;
+        renderer.toneMappingExposure = 1.15;
+        renderer.outputColorSpace = THREE.SRGBColorSpace;
+        container.appendChild(renderer.domElement);
+
+        // Info da GPU para HUD
+        try {
+            const gl = renderer.getContext();
+            const debugInfo = gl.getExtension('WEBGL_debug_renderer_info');
+            if (debugInfo) {
+                const gpuRenderer = gl.getParameter(debugInfo.UNMASKED_RENDERER_WEBGL);
+                const cleanName = gpuRenderer.split('(')[0].replace('ANGLE ', '').trim();
+                document.getElementById('hud-gpu').textContent = `WebGL2 • ${cleanName.substring(0, 32)}`;
+            }
+        } catch (e) {
+            console.warn('Info GPU indisponível:', e);
+        }
+
+        const scene = new THREE.Scene();
+        scene.background = new THREE.Color('#090b10');
+        scene.fog = new THREE.FogExp2('#090b10', 0.022);
+
+        const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerHeight, 0.1, 200);
+        camera.position.set(5.2, 3.8, 6.4);
+
+        // =========================================================================
+        // 3. CONTROLES DE CÂMERA & TRANSFORM GIZMO
+        // =========================================================================
+        const orbitControls = new OrbitControls(camera, renderer.domElement);
+        orbitControls.enableDamping = true;
+        orbitControls.dampingFactor = 0.06;
+        orbitControls.maxPolarAngle = Math.PI / 2 - 0.02; // Impede atravessar o piso
+        orbitControls.minDistance = 1.2;
+        orbitControls.maxDistance = 40;
+        orbitControls.target.set(0, 1.1, 0);
+
+        const transformControls = new TransformControls(camera, renderer.domElement);
+        transformControls.setSize(0.85);
+        transformControls.addEventListener('dragging-changed', (event) => {
+            orbitControls.enabled = !event.value;
+        });
+        scene.add(transformControls);
+
+        // =========================================================================
+        // 4. GERADOR PROCEDURAL DE AMBIENTES HDRI (PMREMGenerator)
+        // =========================================================================
+        const pmremGenerator = new THREE.PMREMGenerator(renderer);
+        pmremGenerator.compileEquirectangularShader();
+        let currentEnvRT = null;
+
+        function generateStudioEnvironment(preset = 'neutral') {
+            const envScene = new THREE.Scene();
+
+            const configs = {
+                neutral: {
+                    bg: '#11151f',
+                    panels: [
+                        { color: '#ffffff', intensity: 14, pos: [0, 12, 0], rot: [Math.PI / 2, 0, 0], scale: [14, 14, 1] },
+                        { color: '#e0f2fe', intensity: 9, pos: [10, 4, 8], rot: [0, -Math.PI / 4, 0], scale: [8, 10, 1] },
+                        { color: '#fef3c7', intensity: 7, pos: [-10, 3, -6], rot: [0, Math.PI / 3, 0], scale: [10, 8, 1] },
+                        { color: '#38bdf8', intensity: 3, pos: [0, -6, 0], rot: [-Math.PI / 2, 0, 0], scale: [20, 20, 1] }
+                    ]
+                },
+                sunset: {
+                    bg: '#1c1117',
+                    panels: [
+                        { color: '#ff7b00', intensity: 16, pos: [12, 4, -6], rot: [0, -Math.PI / 3, 0], scale: [14, 8, 1] },
+                        { color: '#ff2a6d', intensity: 10, pos: [-8, 8, 6], rot: [0.4, Math.PI / 4, 0], scale: [12, 10, 1] },
+                        { color: '#3b82f6', intensity: 6, pos: [0, 14, 0], rot: [Math.PI / 2, 0, 0], scale: [16, 16, 1] }
+                    ]
+                },
+                neon: {
+                    bg: '#060814',
+                    panels: [
+                        { color: '#00f0ff', intensity: 18, pos: [9, 5, 7], rot: [0, -Math.PI / 4, 0], scale: [5, 14, 1] },
+                        { color: '#ff007f', intensity: 18, pos: [-9, 5, 7], rot: [0, Math.PI / 4, 0], scale: [5, 14, 1] },
+                        { color: '#7000ff', intensity: 12, pos: [0, 12, -8], rot: [Math.PI / 3, 0, 0], scale: [16, 6, 1] }
+                    ]
+                },
+                metallic: {
+                    bg: '#08090c',
+                    panels: [
+                        { color: '#ffffff', intensity: 22, pos: [0, 12, 2], rot: [Math.PI / 2, 0, 0], scale: [3, 18, 1] },
+                        { color: '#cbd5e1', intensity: 16, pos: [11, 3, 0], rot: [0, -Math.PI / 2, 0], scale: [2, 14, 1] },
+                        { color: '#94a3b8', intensity: 14, pos: [-11, 3, 0], rot: [0, Math.PI / 2, 0], scale: [2, 14, 1] }
+                    ]
+                }
+            };
+
+            const cfg = configs[preset] || configs.neutral;
+            envScene.background = new THREE.Color(cfg.bg);
+
+            const planeGeo = new THREE.PlaneGeometry(1, 1);
+            cfg.panels.forEach(p => {
+                const mat = new THREE.MeshBasicMaterial({
+                    color: new THREE.Color(p.color).multiplyScalar(p.intensity),
+                    side: THREE.DoubleSide
+                });
+                const mesh = new THREE.Mesh(planeGeo, mat);
+                mesh.position.set(...p.pos);
+                mesh.rotation.set(...p.rot);
+                mesh.scale.set(...p.scale);
+                envScene.add(mesh);
+            });
+
+            if (currentEnvRT) currentEnvRT.dispose();
+            currentEnvRT = pmremGenerator.fromScene(envScene, 0.035);
+            scene.environment = currentEnvRT.texture;
+            scene.environmentIntensity = state.envIntensity;
+
+            // Atualiza tonalidade sutil do fundo da cena
+            scene.background = new THREE.Color(cfg.bg).multiplyScalar(0.65);
+            scene.fog.color.copy(scene.background);
+        }
+
+        // =========================================================================
+        // 5. GERADOR PROCEDURAL DE MICRO-TEXTURAS (NORMAL / BUMP MAPS)
+        // =========================================================================
+        const proceduralTextures = {};
+
+        function createProceduralTextures() {
+            // 1. Aço Escovado (Brushed Metal)
+            const brushCanvas = document.createElement('canvas');
+            brushCanvas.width = 512;
+            brushCanvas.height = 512;
+            const bCtx = brushCanvas.getContext('2d');
+            bCtx.fillStyle = '#808080';
+            bCtx.fillRect(0, 0, 512, 512);
+            for (let i = 0; i < 4500; i++) {
+                const y = Math.random() * 512;
+                const x = Math.random() * 512;
+                const len = 30 + Math.random() * 140;
+                const shade = Math.floor(105 + Math.random() * 50);
+                bCtx.strokeStyle = `rgba(${shade},${shade},${shade},0.35)`;
+                bCtx.lineWidth = 1;
+                bCtx.beginPath();
+                bCtx.moveTo(x, y);
+                bCtx.lineTo(x + len, y);
+                bCtx.stroke();
+            }
+            const brushedTex = new THREE.CanvasTexture(brushCanvas);
+            brushedTex.wrapS = THREE.RepeatWrapping;
+            brushedTex.wrapT = THREE.RepeatWrapping;
+            brushedTex.repeat.set(3, 3);
+            proceduralTextures.brushed = brushedTex;
+
+            // 2. Fibra de Carbono (Carbon Fiber)
+            const carbonCanvas = document.createElement('canvas');
+            carbonCanvas.width = 64;
+            carbonCanvas.height = 64;
+            const cCtx = carbonCanvas.getContext('2d');
+            cCtx.fillStyle = '#303030';
+            cCtx.fillRect(0, 0, 64, 64);
+            cCtx.fillStyle = '#b0b0b0';
+            cCtx.fillRect(0, 0, 32, 16);
+            cCtx.fillRect(32, 16, 32, 16);
+            cCtx.fillStyle = '#606060';
+            cCtx.fillRect(0, 32, 32, 16);
+            cCtx.fillRect(32, 48, 32, 16);
+            const carbonTex = new THREE.CanvasTexture(carbonCanvas);
+            carbonTex.wrapS = THREE.RepeatWrapping;
+            carbonTex.wrapT = THREE.RepeatWrapping;
+            carbonTex.repeat.set(16, 16);
+            proceduralTextures.carbon = carbonTex;
+        }
+
+        createProceduralTextures();
+
+        // =========================================================================
+        // 6. ILUMINAÇÃO DO ESTÚDIO & PISO INFINITO
+        // =========================================================================
+        const hemiLight = new THREE.HemisphereLight('#dbeafe', '#1e293b', 0.55);
+        scene.add(hemiLight);
+
+        const keyLight = new THREE.DirectionalLight('#ffffff', 2.8);
+        keyLight.castShadow = true;
+        keyLight.shadow.mapSize.width = 2048;
+        keyLight.shadow.mapSize.height = 2048;
+        keyLight.shadow.camera.near = 0.5;
+        keyLight.shadow.camera.far = 30;
+        const d = 7;
+        keyLight.shadow.camera.left = -d;
+        keyLight.shadow.camera.right = d;
+        keyLight.shadow.camera.top = d;
+        keyLight.shadow.camera.bottom = -d;
+        keyLight.shadow.bias = -0.0004;
+        scene.add(keyLight);
+
+        // Rim Light (Luz de Recorte traseira para destacar silhuetas metálicas)
+        const rimLight = new THREE.DirectionalLight('#38bdf8', 1.4);
+        rimLight.position.set(-5, 4, -6);
+        scene.add(rimLight);
+
+        function updateKeyLightPosition() {
+            const radius = 10;
+            const azRad = THREE.MathUtils.degToRad(state.keyAzimuth);
+            const elRad = THREE.MathUtils.degToRad(state.keyElevation);
+            keyLight.position.x = radius * Math.cos(elRad) * Math.sin(azRad);
+            keyLight.position.y = radius * Math.sin(elRad);
+            keyLight.position.z = radius * Math.cos(elRad) * Math.cos(azRad);
+        }
+        updateKeyLightPosition();
+
+        // Piso do Estúdio + Grade de Precisão
+        const floorGroup = new THREE.Group();
+        const floorGeo = new THREE.CircleGeometry(35, 64);
+        const floorMat = new THREE.MeshStandardMaterial({
+            color: '#0c0f17',
+            metalness: 0.75,
+            roughness: 0.35
+        });
+        const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+        floorMesh.rotation.x = -Math.PI / 2;
+        floorMesh.receiveShadow = true;
+        floorGroup.add(floorMesh);
+
+        const gridHelper = new THREE.GridHelper(24, 48, '#1e293b', '#131824');
+        gridHelper.position.y = 0.002;
+        gridHelper.material.transparent = true;
+        gridHelper.material.opacity = 0.55;
+        floorGroup.add(gridHelper);
+        scene.add(floorGroup);
+
+        // =========================================================================
+        // 7. PIPELINE DE PÓS-PROCESSAMENTO (EffectComposer + UnrealBloomPass)
+        // =========================================================================
+        const composer = new EffectComposer(renderer);
+        const renderPass = new RenderPass(scene, camera);
+        composer.addPass(renderPass);
+
+        const bloomPass = new UnrealBloomPass(
+            new THREE.Vector2(window.innerWidth, window.innerHeight),
+            0.45, // strength
+            0.4,  // radius
+            0.85  // threshold
+        );
+        composer.addPass(bloomPass);
+
+        const outputPass = new OutputPass();
+        composer.addPass(outputPass);
+
+        // =========================================================================
+        // 8. GEOMETRIA PROCEDURAL DE ENGRENAGEM MECÂNICA
+        // =========================================================================
+        function createGearGeometry(teeth = 16, outerRadius = 1.0, innerRadius = 0.78, holeRadius = 0.32, depth = 0.32) {
+            const shape = new THREE.Shape();
+            const step = (Math.PI * 2) / teeth;
+
+            for (let i = 0; i < teeth; i++) {
+                const a0 = i * step;
+                const a1 = a0 + step * 0.22;
+                const a2 = a0 + step * 0.32;
+                const a3 = a0 + step * 0.68;
+                const a4 = a0 + step * 0.78;
+
+                if (i === 0) {
+                    shape.moveTo(Math.cos(a0) * innerRadius, Math.sin(a0) * innerRadius);
+                } else {
+                    shape.lineTo(Math.cos(a0) * innerRadius, Math.sin(a0) * innerRadius);
+                }
+                shape.lineTo(Math.cos(a1) * innerRadius, Math.sin(a1) * innerRadius);
+                shape.lineTo(Math.cos(a2) * outerRadius, Math.sin(a2) * outerRadius);
+                shape.lineTo(Math.cos(a3) * outerRadius, Math.sin(a3) * outerRadius);
+                shape.lineTo(Math.cos(a4) * innerRadius, Math.sin(a4) * innerRadius);
+            }
+            shape.closePath();
+
+            // Furo central
+            const hole = new THREE.Path();
+            hole.absarc(0, 0, holeRadius, 0, Math.PI * 2, false);
+            shape.holes.push(hole);
+
+            const extrudeSettings = {
+                depth: depth,
+                bevelEnabled: true,
+                bevelSegments: 2,
+                steps: 1,
+                bevelSize: 0.025,
+                bevelThickness: 0.025
+            };
+
+            const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+            geo.center();
+            return geo;
+        }
+
+        // =========================================================================
+        // 9. CENA SHOWCASE PADRÃO (CONJUNTO MECÂNICO DE PRECISÃO)
+        // =========================================================================
+        function clearSceneObjects() {
+            transformControls.detach();
+            state.sceneObjects.forEach(item => {
+                scene.remove(item.object);
+            });
+            state.sceneObjects = [];
+            state.selectedObject = null;
+            state.selectedMesh = null;
+        }
+
+        function registerSceneObject(object, name, icon = 'box') {
+            object.traverse(child => {
+                if (child.isMesh) {
+                    child.castShadow = true;
+                    child.receiveShadow = true;
+                    // Garante que o material seja MeshPhysicalMaterial para suportar Clearcoat/Transmission
+                    if (!child.material.isMeshPhysicalMaterial) {
+                        const oldMat = child.material;
+                        child.material = new THREE.MeshPhysicalMaterial({
+                            color: oldMat.color || new THREE.Color('#cbd5e1'),
+                            metalness: oldMat.metalness !== undefined ? oldMat.metalness : 0.5,
+                            roughness: oldMat.roughness !== undefined ? oldMat.roughness : 0.35,
+                            map: oldMat.map || null,
+                            normalMap: oldMat.normalMap || null
+                        });
+                    }
+                    child.material.wireframe = state.wireframe;
+                }
+            });
+
+            const entry = {
+                id: THREE.MathUtils.generateUUID(),
+                name: name,
+                icon: icon,
+                object: object
+            };
+
+            scene.add(object);
+            state.sceneObjects.push(entry);
+            updateOutlinerUI();
+            selectSceneObject(entry);
+            return entry;
+        }
+
+        function buildShowcaseAssembly() {
+            clearSceneObjects();
+
+            // 1. Base Pedestal Usinada (Aço Escovado)
+            const baseGeo = new THREE.CylinderGeometry(1.45, 1.65, 0.28, 64);
+            const baseMat = new THREE.MeshPhysicalMaterial({
+                color: '#64748b',
+                metalness: 0.92,
+                roughness: 0.28,
+                bumpMap: proceduralTextures.brushed,
+                bumpScale: 0.008,
+                clearcoat: 0.2
+            });
+            const baseMesh = new THREE.Mesh(baseGeo, baseMat);
+            baseMesh.position.set(0, 0.14, 0);
+            registerSceneObject(baseMesh, 'Base Usinada CNC', 'cylinder');
+
+            // 2. Anel Gimbal Externo (Alumínio Anodizado Azul)
+            const ringGeo = new THREE.TorusGeometry(1.15, 0.11, 32, 96);
+            const ringMat = new THREE.MeshPhysicalMaterial({
+                color: '#0284c7',
+                metalness: 0.88,
+                roughness: 0.22,
+                clearcoat: 0.65,
+                clearcoatRoughness: 0.1
+            });
+            const ringMesh = new THREE.Mesh(ringGeo, ringMat);
+            ringMesh.position.set(0, 1.55, 0);
+            ringMesh.rotation.set(0.35, 0.4, 0);
+            registerSceneObject(ringMesh, 'Anel Anodizado Azul', 'circle');
+
+            // 3. Engrenagem Helicoidal Central (Ouro Polido)
+            const gearGeo = createGearGeometry(20, 0.88, 0.72, 0.42, 0.22);
+            const gearMat = new THREE.MeshPhysicalMaterial({
+                color: '#fbbf24',
+                metalness: 0.98,
+                roughness: 0.16,
+                clearcoat: 0.4
+            });
+            const gearMesh = new THREE.Mesh(gearGeo, gearMat);
+            gearMesh.position.set(0, 1.55, 0);
+            gearMesh.rotation.set(-0.25, -0.3, 0);
+            registerSceneObject(gearMesh, 'Engrenagem de Latão', 'settings');
+
+            // 4. Núcleo Energético Emissivo (Bloom Core)
+            const coreGeo = new THREE.IcosahedronGeometry(0.34, 3);
+            const coreMat = new THREE.MeshPhysicalMaterial({
+                color: '#38bdf8',
+                metalness: 0.1,
+                roughness: 0.1,
+                emissive: new THREE.Color('#0ea5e9'),
+                emissiveIntensity: 3.4
+            });
+            const coreMesh = new THREE.Mesh(coreGeo, coreMat);
+            coreMesh.position.set(0, 1.55, 0);
+            registerSceneObject(coreMesh, 'Núcleo Reator Emissivo', 'sparkles');
+
+            // 5. Cúpula de Vidro Físico Protetora
+            const domeGeo = new THREE.SphereGeometry(0.55, 48, 48);
+            const domeMat = new THREE.MeshPhysicalMaterial({
+                color: '#ffffff',
+                metalness: 0.0,
+                roughness: 0.05,
+                transmission: 0.92,
+                thickness: 0.6,
+                ior: 1.52,
+                clearcoat: 1.0
+            });
+            const domeMesh = new THREE.Mesh(domeGeo, domeMat);
+            domeMesh.position.set(0, 1.55, 0);
+            registerSceneObject(domeMesh, 'Cápsula Cristal Óptico', 'circle');
+
+            // Seleciona a Engrenagem por padrão para edição imediata
+            selectSceneObject(state.sceneObjects[2]);
+        }
+
+        // =========================================================================
+        // 10. SELEÇÃO, RAYCASTING & OUTLINER UI
+        // =========================================================================
+        function selectSceneObject(entry) {
+            state.selectedObject = entry;
+
+            if (!entry) {
+                transformControls.detach();
+                state.selectedMesh = null;
+                document.getElementById('selected-obj-label').textContent = 'Nenhum';
+                updateOutlinerUI();
+                return;
+            }
+
+            transformControls.attach(entry.object);
+
+            // Encontra a primeira malha válida dentro do objeto (caso seja um grupo GLTF/OBJ)
+            let targetMesh = null;
+            entry.object.traverse(child => {
+                if (child.isMesh && !targetMesh) {
+                    targetMesh = child;
+                }
+            });
+            state.selectedMesh = targetMesh;
+
+            document.getElementById('selected-obj-label').textContent = entry.name;
+            syncMaterialUI();
+            updateOutlinerUI();
+        }
+
+        function updateOutlinerUI() {
+            const outliner = document.getElementById('scene-outliner');
+            outliner.innerHTML = '';
+
+            state.sceneObjects.forEach(entry => {
+                const isSelected = state.selectedObject && state.selectedObject.id === entry.id;
+                const btn = document.createElement('button');
+                btn.className = `w-full text-left px-2.5 py-2 rounded-xl text-xs flex items-center justify-between transition ${
+                    isSelected
+                        ? 'bg-sky-500/20 text-sky-300 border border-sky-500/40 font-medium'
+                        : 'hover:bg-white/5 text-slate-300 border border-transparent'
+                }`;
+
+                btn.innerHTML = `
+                    <div class="flex items-center gap-2 truncate">
+                        <i data-lucide="${entry.icon}" class="w-3.5 h-3.5 ${isSelected ? 'text-sky-400' : 'text-slate-400'} shrink-0"></i>
+                        <span class="truncate">${entry.name}</span>
+                    </div>
+                    <span class="text-[10px] opacity-50 mono">PBR</span>
+                `;
+
+                btn.addEventListener('click', () => selectSceneObject(entry));
+                outliner.appendChild(btn);
+            });
+
+            lucide.createIcons();
+        }
+
+        // Clique na Viewport para selecionar objetos via Raycaster
+        const raycaster = new THREE.Raycaster();
+        const pointer = new THREE.Vector2();
+        let pointerDownPos = { x: 0, y: 0 };
+
+        renderer.domElement.addEventListener('pointerdown', (e) => {
+            pointerDownPos = { x: e.clientX, y: e.clientY };
+        });
+
+        renderer.domElement.addEventListener('pointerup', (e) => {
+            // Evita selecionar se o usuário estava apenas girando a câmera
+            const dist = Math.hypot(e.clientX - pointerDownPos.x, e.clientY - pointerDownPos.y);
+            if (dist > 5 || transformControls.dragging) return;
+
+            const rect = renderer.domElement.getBoundingClientRect();
+            pointer.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+            pointer.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+
+            raycaster.setFromCamera(pointer, camera);
+            const roots = state.sceneObjects.map(o => o.object);
+            const intersects = raycaster.intersectObjects(roots, true);
+
+            if (intersects.length > 0) {
+                let hitObj = intersects[0].object;
+                // Sobe na hierarquia até encontrar o objeto raiz registrado
+                while (hitObj.parent && !roots.includes(hitObj)) {
+                    hitObj = hitObj.parent;
+                }
+                const foundEntry = state.sceneObjects.find(item => item.object === hitObj);
+                if (foundEntry) {
+                    selectSceneObject(foundEntry);
+                }
+            } else {
+                selectSceneObject(null);
+            }
+        });
+
+        // =========================================================================
+        // 11. ADICIONAR PRIMITIVAS, DUPLICAR & EXCLUIR
+        // =========================================================================
+        let primitiveCounter = 1;
+
+        function addPrimitive(type) {
+            let geo, name, icon;
+
+            switch (type) {
+                case 'sphere':
+                    geo = new THREE.SphereGeometry(0.65, 64, 64);
+                    name = `Esfera PBR #${primitiveCounter++}`;
+                    icon = 'circle';
+                    break;
+                case 'box':
+                    geo = new RoundedBoxGeometry(1.1, 1.1, 1.1, 6, 0.08);
+                    name = `Cubo Chanfrado #${primitiveCounter++}`;
+                    icon = 'box';
+                    break;
+                case 'torusKnot':
+                    geo = new THREE.TorusKnotGeometry(0.55, 0.18, 160, 32);
+                    name = `Torus Knot #${primitiveCounter++}`;
+                    icon = 'infinity';
+                    break;
+                case 'cylinder':
+                    geo = new THREE.CylinderGeometry(0.55, 0.55, 1.2, 64);
+                    name = `Cilindro #${primitiveCounter++}`;
+                    icon = 'cylinder';
+                    break;
+                case 'gear':
+                    geo = createGearGeometry(16, 0.85, 0.68, 0.28, 0.28);
+                    name = `Engrenagem #${primitiveCounter++}`;
+                    icon = 'settings';
+                    break;
+                case 'plane':
+                    geo = new THREE.PlaneGeometry(2.2, 2.2, 32, 32);
+                    name = `Plano #${primitiveCounter++}`;
+                    icon = 'square';
+                    break;
+            }
+
+            const mat = new THREE.MeshPhysicalMaterial({
+                color: '#cbd5e1',
+                metalness: 0.88,
+                roughness: 0.22,
+                clearcoat: 0.35,
+                side: type === 'plane' ? THREE.DoubleSide : THREE.FrontSide
+            });
+
+            const mesh = new THREE.Mesh(geo, mat);
+            if (type === 'plane') mesh.rotation.x = -Math.PI / 2;
+
+            // Posiciona levemente deslocado para não sobrepor totalmente
+            const offset = (state.sceneObjects.length % 5) * 0.35 - 0.7;
+            mesh.position.set(offset, 1.0, offset * 0.5);
+
+            registerSceneObject(mesh, name, icon);
+            showToast(`Adicionado: ${name}`);
+        }
+
+        document.querySelectorAll('.add-prim-btn').forEach(btn => {
+            btn.addEventListener('click', () => addPrimitive(btn.dataset.primitive));
+        });
+
+        // Duplicar Objeto Selecionado
+        document.getElementById('btn-duplicate-obj').addEventListener('click', () => {
+            if (!state.selectedObject) {
+                showToast('Selecione um objeto para duplicar.', 'warn');
+                return;
+            }
+            const clone = state.selectedObject.object.clone();
+            clone.traverse(child => {
+                if (child.isMesh && child.material) {
+                    child.material = child.material.clone();
+                }
+            });
+            clone.position.x += 0.6;
+            clone.position.z += 0.4;
+            registerSceneObject(clone, `${state.selectedObject.name} (Cópia)`, state.selectedObject.icon);
+            showToast('Objeto duplicado!');
+        });
+
+        // Excluir Objeto Selecionado
+        function deleteSelectedObject() {
+            if (!state.selectedObject) return;
+            const idx = state.sceneObjects.findIndex(o => o.id === state.selectedObject.id);
+            if (idx > -1) {
+                const removed = state.sceneObjects.splice(idx, 1)[0];
+                transformControls.detach();
+                scene.remove(removed.object);
+                showToast(`Removido: ${removed.name}`);
+                selectSceneObject(state.sceneObjects[state.sceneObjects.length - 1] || null);
+            }
+        }
+        document.getElementById('btn-delete-obj').addEventListener('click', deleteSelectedObject);
+
+        // =========================================================================
+        // 12. IMPORTADOR DE ARQUIVOS 3D (.GLB, .GLTF, .OBJ, .STL)
+        // =========================================================================
+        const gltfLoader = new GLTFLoader();
+        const objLoader = new OBJLoader();
+        const stlLoader = new STLLoader();
+
+        function normalizeAndCenterModel(object3D) {
+            const box = new THREE.Box3().setFromObject(object3D);
+            const size = box.getSize(new THREE.Vector3());
+            const center = box.getCenter(new THREE.Vector3());
+
+            const maxDim = Math.max(size.x, size.y, size.z) || 1;
+            const scaleFactor = 2.4 / maxDim; // Normaliza para caber perfeitamente no palco
+
+            const wrapper = new THREE.Group();
+            object3D.scale.multiplyScalar(scaleFactor);
+            object3D.position.sub(center.multiplyScalar(scaleFactor));
+            // Apoia a base do modelo sobre o piso Y = 0
+            object3D.position.y += (size.y * scaleFactor) / 2;
+
+            wrapper.add(object3D);
+            return wrapper;
+        }
+
+        function handleImportedFile(file) {
+            if (!file) return;
+            const fileName = file.name;
+            const ext = fileName.split('.').pop().toLowerCase();
+            const reader = new FileReader();
+
+            showToast(`Carregando ${fileName}...`);
+
+            try {
+                if (ext === 'glb' || ext === 'gltf') {
+                    reader.onload = (e) => {
+                        gltfLoader.parse(e.target.result, '', (gltf) => {
+                            const normalized = normalizeAndCenterModel(gltf.scene);
+                            registerSceneObject(normalized, fileName, 'box');
+                            showToast(`Modelo GLTF importado com sucesso!`);
+                        }, (err) => {
+                            console.error(err);
+                            showToast('Erro ao processar arquivo GLTF/GLB.', 'error');
+                        });
+                    };
+                    reader.readAsArrayBuffer(file);
+                } else if (ext === 'obj') {
+                    reader.onload = (e) => {
+                        const obj = objLoader.parse(e.target.result);
+                        const normalized = normalizeAndCenterModel(obj);
+                        registerSceneObject(normalized, fileName, 'box');
+                        showToast(`Modelo OBJ importado com sucesso!`);
+                    };
+                    reader.readAsText(file);
+                } else if (ext === 'stl') {
+                    reader.onload = (e) => {
+                        const geometry = stlLoader.parse(e.target.result);
+                        geometry.computeVertexNormals();
+                        const mat = new THREE.MeshPhysicalMaterial({
+                            color: '#cbd5e1',
+                            metalness: 0.85,
+                            roughness: 0.25,
+                            clearcoat: 0.3
+                        });
+                        const mesh = new THREE.Mesh(geometry, mat);
+                        const normalized = normalizeAndCenterModel(mesh);
+                        registerSceneObject(normalized, fileName, 'box');
+                        showToast(`Malha STL importada com sucesso!`);
+                    };
+                    reader.readAsArrayBuffer(file);
+                } else {
+                    showToast('Formato não suportado. Use .GLB, .GLTF, .OBJ ou .STL', 'error');
+                }
+            } catch (err) {
+                console.error(err);
+                showToast('Falha ao importar arquivo 3D.', 'error');
+            }
+        }
+
+        document.getElementById('file-input').addEventListener('change', (e) => {
+            handleImportedFile(e.target.files[0]);
+            e.target.value = '';
+        });
+
+        // Suporte Drag-and-Drop na janela inteira
+        const dropOverlay = document.getElementById('drop-zone-overlay');
+        let dragCounter = 0;
+
+        window.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            dragCounter++;
+            dropOverlay.classList.add('active');
+        });
+        window.addEventListener('dragleave', (e) => {
+            e.preventDefault();
+            dragCounter--;
+            if (dragCounter <= 0) {
+                dragCounter = 0;
+                dropOverlay.classList.remove('active');
+            }
+        });
+        window.addEventListener('dragover', (e) => e.preventDefault());
+        window.addEventListener('drop', (e) => {
+            e.preventDefault();
+            dragCounter = 0;
+            dropOverlay.classList.remove('active');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                handleImportedFile(e.dataTransfer.files[0]);
+            }
+        });
+
+        // =========================================================================
+        // 13. EDITOR DE MATERIAIS PBR EM TEMPO REAL
+        // =========================================================================
+        const materialPresets = {
+            brushedSteel: {
+                color: '#cbd5e1', metalness: 0.94, roughness: 0.26,
+                clearcoat: 0.25, clearcoatRoughness: 0.15, transmission: 0,
+                emissive: '#000000', emissiveIntensity: 0, surface: 'brushed'
+            },
+            polishedGold: {
+                color: '#fbbf24', metalness: 1.0, roughness: 0.12,
+                clearcoat: 0.4, clearcoatRoughness: 0.08, transmission: 0,
+                emissive: '#000000', emissiveIntensity: 0, surface: 'smooth'
+            },
+            chrome: {
+                color: '#f8fafc', metalness: 1.0, roughness: 0.04,
+                clearcoat: 0.8, clearcoatRoughness: 0.02, transmission: 0,
+                emissive: '#000000', emissiveIntensity: 0, surface: 'smooth'
+            },
+            anodizedBlue: {
+                color: '#0284c7', metalness: 0.88, roughness: 0.22,
+                clearcoat: 0.7, clearcoatRoughness: 0.1, transmission: 0,
+                emissive: '#000000', emissiveIntensity: 0, surface: 'brushed'
+            },
+            crystalGlass: {
+                color: '#ffffff', metalness: 0.0, roughness: 0.05,
+                clearcoat: 1.0, clearcoatRoughness: 0.03, transmission: 0.94,
+                emissive: '#000000', emissiveIntensity: 0, surface: 'smooth'
+            },
+            mattePlastic: {
+                color: '#334155', metalness: 0.05, roughness: 0.68,
+                clearcoat: 0.0, clearcoatRoughness: 0.5, transmission: 0,
+                emissive: '#000000', emissiveIntensity: 0, surface: 'carbon'
+            },
+            neonEmissive: {
+                color: '#38bdf8', metalness: 0.1, roughness: 0.15,
+                clearcoat: 0.5, clearcoatRoughness: 0.1, transmission: 0,
+                emissive: '#0ea5e9', emissiveIntensity: 3.5, surface: 'smooth'
+            }
+        };
+
+        function applyToSelectedMaterials(callback) {
+            if (!state.selectedObject) return;
+            state.selectedObject.object.traverse(child => {
+                if (child.isMesh && child.material) {
+                    callback(child.material);
+                    child.material.needsUpdate = true;
+                }
+            });
+        }
+
+        function syncMaterialUI() {
+            if (!state.selectedMesh || !state.selectedMesh.material) return;
+            const mat = state.selectedMesh.material;
+
+            const hexColor = '#' + mat.color.getHexString();
+            document.getElementById('mat-color').value = hexColor;
+            document.getElementById('val-base-color').textContent = hexColor.toUpperCase();
+
+            document.getElementById('mat-metalness').value = mat.metalness;
+            document.getElementById('val-metalness').textContent = mat.metalness.toFixed(2);
+
+            document.getElementById('mat-roughness').value = mat.roughness;
+            document.getElementById('val-roughness').textContent = mat.roughness.toFixed(2);
+
+            const cc = mat.clearcoat || 0;
+            document.getElementById('mat-clearcoat').value = cc;
+            document.getElementById('val-clearcoat').textContent = cc.toFixed(2);
+
+            const ccr = mat.clearcoatRoughness || 0;
+            document.getElementById('mat-clearcoat-roughness').value = ccr;
+            document.getElementById('val-clearcoat-roughness').textContent = ccr.toFixed(2);
+
+            const trans = mat.transmission || 0;
+            document.getElementById('mat-transmission').value = trans;
+            document.getElementById('val-transmission').textContent = trans.toFixed(2);
+
+            const emHex = mat.emissive ? '#' + mat.emissive.getHexString() : '#000000';
+            document.getElementById('mat-emissive').value = emHex;
+            document.getElementById('val-emissive-color').textContent = emHex.toUpperCase();
+
+            const emInt = mat.emissiveIntensity || 0;
+            document.getElementById('mat-emissive-intensity').value = emInt;
+            document.getElementById('val-emissive-intensity').textContent = emInt.toFixed(1);
+
+            // Detecta textura procedural ativa
+            const texSelect = document.getElementById('mat-surface-texture');
+            if (mat.bumpMap === proceduralTextures.brushed) texSelect.value = 'brushed';
+            else if (mat.bumpMap === proceduralTextures.carbon) texSelect.value = 'carbon';
+            else texSelect.value = 'smooth';
+        }
+
+        // Eventos dos Presets PBR
+        document.querySelectorAll('.mat-preset-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                if (!state.selectedObject) {
+                    showToast('Selecione um objeto na cena primeiro.', 'warn');
+                    return;
+                }
+                const p = materialPresets[btn.dataset.matPreset];
+                if (!p) return;
+
+                applyToSelectedMaterials(mat => {
+                    mat.color.set(p.color);
+                    mat.metalness = p.metalness;
+                    mat.roughness = p.roughness;
+                    mat.clearcoat = p.clearcoat;
+                    mat.clearcoatRoughness = p.clearcoatRoughness;
+                    mat.transmission = p.transmission;
+                    mat.ior = 1.52;
+                    mat.thickness = p.transmission > 0 ? 0.6 : 0;
+                    mat.emissive.set(p.emissive);
+                    mat.emissiveIntensity = p.emissiveIntensity;
+
+                    if (p.surface === 'brushed') {
+                        mat.bumpMap = proceduralTextures.brushed;
+                        mat.bumpScale = 0.008;
+                    } else if (p.surface === 'carbon') {
+                        mat.bumpMap = proceduralTextures.carbon;
+                        mat.bumpScale = 0.015;
+                    } else {
+                        mat.bumpMap = null;
+                    }
+                });
+                syncMaterialUI();
+            });
+        });
+
+        // Bindings individuais do Editor PBR
+        document.getElementById('mat-color').addEventListener('input', (e) => {
+            document.getElementById('val-base-color').textContent = e.target.value.toUpperCase();
+            applyToSelectedMaterials(mat => mat.color.set(e.target.value));
+        });
+
+        document.getElementById('mat-metalness').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('val-metalness').textContent = v.toFixed(2);
+            applyToSelectedMaterials(mat => mat.metalness = v);
+        });
+
+        document.getElementById('mat-roughness').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('val-roughness').textContent = v.toFixed(2);
+            applyToSelectedMaterials(mat => mat.roughness = v);
+        });
+
+        document.getElementById('mat-clearcoat').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('val-clearcoat').textContent = v.toFixed(2);
+            applyToSelectedMaterials(mat => mat.clearcoat = v);
+        });
+
+        document.getElementById('mat-clearcoat-roughness').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('val-clearcoat-roughness').textContent = v.toFixed(2);
+            applyToSelectedMaterials(mat => mat.clearcoatRoughness = v);
+        });
+
+        document.getElementById('mat-transmission').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('val-transmission').textContent = v.toFixed(2);
+            applyToSelectedMaterials(mat => {
+                mat.transmission = v;
+                mat.ior = 1.52;
+                mat.thickness = v > 0 ? 0.65 : 0;
+            });
+        });
+
+        document.getElementById('mat-emissive').addEventListener('input', (e) => {
+            document.getElementById('val-emissive-color').textContent = e.target.value.toUpperCase();
+            applyToSelectedMaterials(mat => mat.emissive.set(e.target.value));
+        });
+
+        document.getElementById('mat-emissive-intensity').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('val-emissive-intensity').textContent = v.toFixed(1);
+            applyToSelectedMaterials(mat => mat.emissiveIntensity = v);
+        });
+
+        document.getElementById('mat-surface-texture').addEventListener('change', (e) => {
+            const mode = e.target.value;
+            applyToSelectedMaterials(mat => {
+                if (mode === 'brushed') {
+                    mat.bumpMap = proceduralTextures.brushed;
+                    mat.bumpScale = 0.008;
+                } else if (mode === 'carbon') {
+                    mat.bumpMap = proceduralTextures.carbon;
+                    mat.bumpScale = 0.015;
+                } else {
+                    mat.bumpMap = null;
+                }
+            });
+        });
+
+        // =========================================================================
+        // 14. CONTROLES DE ILUMINAÇÃO, AMBIENTE & PÓS-PROCESSAMENTO
+        // =========================================================================
+        document.getElementById('env-preset').addEventListener('change', (e) => {
+            generateStudioEnvironment(e.target.value);
+        });
+
+        document.getElementById('render-exposure').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('val-exposure').textContent = v.toFixed(2);
+            renderer.toneMappingExposure = v;
+        });
+
+        document.getElementById('env-intensity').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            state.envIntensity = v;
+            document.getElementById('val-env-intensity').textContent = v.toFixed(2);
+            scene.environmentIntensity = v;
+        });
+
+        document.getElementById('key-light-color').addEventListener('input', (e) => {
+            keyLight.color.set(e.target.value);
+        });
+
+        document.getElementById('key-light-intensity').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('val-key-intensity').textContent = v.toFixed(1);
+            keyLight.intensity = v;
+        });
+
+        document.getElementById('key-light-azimuth').addEventListener('input', (e) => {
+            state.keyAzimuth = parseInt(e.target.value, 10);
+            document.getElementById('val-key-azimuth').textContent = `${state.keyAzimuth}°`;
+            updateKeyLightPosition();
+        });
+
+        document.getElementById('key-light-elevation').addEventListener('input', (e) => {
+            state.keyElevation = parseInt(e.target.value, 10);
+            document.getElementById('val-key-elevation').textContent = `${state.keyElevation}°`;
+            updateKeyLightPosition();
+        });
+
+        document.getElementById('bloom-enabled').addEventListener('change', (e) => {
+            state.bloomEnabled = e.target.checked;
+            bloomPass.enabled = state.bloomEnabled;
+        });
+
+        document.getElementById('bloom-strength').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('val-bloom-strength').textContent = v.toFixed(2);
+            bloomPass.strength = v;
+        });
+
+        document.getElementById('bloom-threshold').addEventListener('input', (e) => {
+            const v = parseFloat(e.target.value);
+            document.getElementById('val-bloom-threshold').textContent = v.toFixed(2);
+            bloomPass.threshold = v;
+        });
+
+        document.getElementById('floor-visible').addEventListener('change', (e) => {
+            floorGroup.visible = e.target.checked;
+        });
+
+        // =========================================================================
+        // 15. TOOLBAR SUPERIOR, ATALHOS & EXPORTAÇÃO PNG
+        // =========================================================================
+        function setTransformMode(mode) {
+            transformControls.setMode(mode);
+            ['translate', 'rotate', 'scale'].forEach(m => {
+                const btn = document.getElementById(`btn-mode-${m}`);
+                btn.classList.toggle('active', m === mode);
+            });
+        }
+
+        document.getElementById('btn-mode-translate').addEventListener('click', () => setTransformMode('translate'));
+        document.getElementById('btn-mode-rotate').addEventListener('click', () => setTransformMode('rotate'));
+        document.getElementById('btn-mode-scale').addEventListener('click', () => setTransformMode('scale'));
+
+        document.getElementById('btn-toggle-wireframe').addEventListener('click', (e) => {
+            state.wireframe = !state.wireframe;
+            e.currentTarget.classList.toggle('active', state.wireframe);
+            state.sceneObjects.forEach(entry => {
+                entry.object.traverse(child => {
+                    if (child.isMesh && child.material) {
+                        child.material.wireframe = state.wireframe;
+                    }
+                });
+            });
+        });
+
+        document.getElementById('btn-toggle-autorotate').addEventListener('click', (e) => {
+            state.autoRotate = !state.autoRotate;
+            e.currentTarget.classList.toggle('active', state.autoRotate);
+        });
+
+        function focusCameraOnSelection() {
+            if (state.selectedObject) {
+                const box = new THREE.Box3().setFromObject(state.selectedObject.object);
+                const center = box.getCenter(new THREE.Vector3());
+                orbitControls.target.copy(center);
+            } else {
+                orbitControls.target.set(0, 1.1, 0);
+                camera.position.set(5.2, 3.8, 6.4);
+            }
+        }
+        document.getElementById('btn-focus-camera').addEventListener('click', focusCameraOnSelection);
+
+        document.getElementById('btn-reset-scene').addEventListener('click', () => {
+            buildShowcaseAssembly();
+            showToast('Cena de demonstração restaurada.');
+        });
+
+        // Exportar Captura PNG Limpa (Oculta temporariamente o Gizmo)
+        document.getElementById('btn-export-png').addEventListener('click', () => {
+            const wasAttached = transformControls.object;
+            transformControls.detach();
+            composer.render();
+
+            const dataURL = renderer.domElement.toDataURL('image/png');
+            const link = document.createElement('a');
+            link.download = `AetherRender_3D_${Date.now()}.png`;
+            link.href = dataURL;
+            link.click();
+
+            if (wasAttached) transformControls.attach(wasAttached);
+            showToast('Captura PNG exportada com sucesso!');
+        });
+
+        // Abas do Painel Direito
+        const tabMaterial = document.getElementById('tab-material');
+        const tabStudio = document.getElementById('tab-studio');
+        const panelMaterial = document.getElementById('panel-material');
+        const panelStudio = document.getElementById('panel-studio');
+
+        tabMaterial.addEventListener('click', () => {
+            tabMaterial.classList.add('active', 'bg-sky-500/20', 'text-sky-300', 'border', 'border-sky-500/30');
+            tabMaterial.classList.remove('text-slate-400');
+            tabStudio.classList.remove('active', 'bg-sky-500/20', 'text-sky-300', 'border', 'border-sky-500/30');
+            tabStudio.classList.add('text-slate-400');
+            panelMaterial.classList.remove('hidden');
+            panelStudio.classList.add('hidden');
+        });
+
+        tabStudio.addEventListener('click', () => {
+            tabStudio.classList.add('active', 'bg-sky-500/20', 'text-sky-300', 'border', 'border-sky-500/30');
+            tabStudio.classList.remove('text-slate-400');
+            tabMaterial.classList.remove('active', 'bg-sky-500/20', 'text-sky-300', 'border', 'border-sky-500/30');
+            tabMaterial.classList.add('text-slate-400');
+            panelStudio.classList.remove('hidden');
+            panelMaterial.classList.add('hidden');
+        });
+
+        // Drawers Responsivos Mobile
+        document.getElementById('toggle-left-panel').addEventListener('click', () => {
+            document.getElementById('left-sidebar').classList.toggle('open');
+            document.getElementById('right-sidebar').classList.remove('open');
+        });
+        document.getElementById('toggle-right-panel').addEventListener('click', () => {
+            document.getElementById('right-sidebar').classList.toggle('open');
+            document.getElementById('left-sidebar').classList.remove('open');
+        });
+
+        // Atalhos de Teclado
+        window.addEventListener('keydown', (e) => {
+            if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT') return;
+            const key = e.key.toLowerCase();
+            if (key === 'w') setTransformMode('translate');
+            else if (key === 'e') setTransformMode('rotate');
+            else if (key === 'r') setTransformMode('scale');
+            else if (key === 'f') focusCameraOnSelection();
+            else if (key === 'delete' || key === 'backspace') deleteSelectedObject();
+        });
+
+        // Sistema de Notificações Toast
+        function showToast(message, type = 'info') {
+            const container = document.getElementById('toast-container');
+            const toast = document.createElement('div');
+            const borderColor = type === 'error' ? 'border-rose-500/50 text-rose-200' :
+                                type === 'warn' ? 'border-amber-500/50 text-amber-200' :
+                                'border-sky-500/40 text-slate-100';
+
+            toast.className = `glass-panel px-4 py-2 rounded-xl border ${borderColor} text-xs font-medium shadow-xl transition-all duration-300 transform translate-y-0 opacity-100`;
+            toast.textContent = message;
+            container.appendChild(toast);
+
+            setTimeout(() => {
+                toast.style.opacity = '0';
+                toast.style.transform = 'translateY(-10px)';
+                setTimeout(() => toast.remove(), 300);
+            }, 2600);
+        }
+
+        // =========================================================================
+        // 16. REDIMENSIONAMENTO & LOOP DE RENDERIZAÇÃO + TELEMETRIA HUD
+        // =========================================================================
+        window.addEventListener('resize', () => {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            composer.setSize(window.innerWidth, window.innerHeight);
+        });
+
+        const clock = new THREE.Clock();
+        let frameCount = 0;
+        let lastFpsTime = performance.now();
+
+        const hudFps = document.getElementById('hud-fps');
+        const hudCalls = document.getElementById('hud-calls');
+        const hudTriangles = document.getElementById('hud-triangles');
+
+        function animate() {
+            requestAnimationFrame(animate);
+
+            const delta = clock.getDelta();
+            const elapsed = clock.getElapsedTime();
+
+            // Animação suave da cena showcase quando Auto-Rotate está ativo
+            if (state.autoRotate && !transformControls.dragging) {
+                orbitControls.autoRotate = true;
+                orbitControls.autoRotateSpeed = 1.1;
+
+                // Movimento sutil nos componentes da cena inicial
+                if (state.sceneObjects.length >= 4 && state.sceneObjects[2].name === 'Engrenagem de Latão') {
+                    state.sceneObjects[2].object.rotation.z += delta * 0.45;
+                    state.sceneObjects[1].object.rotation.y -= delta * 0.25;
+                    state.sceneObjects[3].object.rotation.y += delta * 0.8;
+                    state.sceneObjects[3].object.position.y = 1.55 + Math.sin(elapsed * 2.2) * 0.04;
+                }
+            } else {
+                orbitControls.autoRotate = false;
+            }
+
+            orbitControls.update();
+            composer.render();
+
+            // Atualização da Telemetria HUD a cada 500ms
+            frameCount++;
+            const now = performance.now();
+            if (now - lastFpsTime >= 500) {
+                const fps = Math.round((frameCount * 1000) / (now - lastFpsTime));
+                hudFps.textContent = fps;
+                hudFps.className = fps >= 50 ? 'text-emerald-400 font-semibold' :
+                                   fps >= 30 ? 'text-amber-400 font-semibold' : 'text-rose-400 font-semibold';
+
+                hudCalls.textContent = renderer.info.render.calls;
+                hudTriangles.textContent = renderer.info.render.triangles.toLocaleString('pt-BR');
+
+                frameCount = 0;
+                lastFpsTime = now;
+            }
+        }
+
+        // =========================================================================
+        // 17. INICIALIZAÇÃO DO ESTÚDIO
+        // =========================================================================
+        window.addEventListener('load', () => {
+            generateStudioEnvironment('neutral');
+            buildShowcaseAssembly();
+            animate();
+        });
+    </script>
+</body>
+</html>
